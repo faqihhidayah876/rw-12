@@ -304,7 +304,7 @@ const FormInputWarga = () => {
             </div>
             <h3 className="text-xl font-bold text-slate-800 mb-2">Data Tersimpan!</h3>
             <p className="text-slate-500 mb-6 text-sm font-medium">Data keluarga, anggota warga, dan koordinat GPS berhasil direkam.</p>
-            <button onClick={() => setShowSuccessModal(false)} className="glass-button w-full py-3 rounded-xl font-bold">
+            <button onClick={() => window.location.reload()} className="glass-button w-full py-3 rounded-xl font-bold">
               Tutup & Input Baru
             </button>
           </div>

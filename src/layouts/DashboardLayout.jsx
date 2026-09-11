@@ -34,7 +34,8 @@ const DashboardLayout = () => {
   const confirmLogout = () => {
     localStorage.removeItem('user');
     setShowLogoutModal(false);
-    navigate('/');
+    // Mengirim state 'pesan' ke halaman login saat redirect
+    navigate('/login', { state: { pesanLogout: 'Anda telah berhasil keluar dari sistem.' } });
   };
 
   const navMenu = [

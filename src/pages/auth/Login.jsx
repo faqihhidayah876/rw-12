@@ -1,14 +1,16 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Lock, Mail, ArrowLeft, Loader2 } from 'lucide-react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { Lock, Mail, ArrowLeft, Loader2, CheckCircle2, X } from 'lucide-react';
 import { Turnstile } from '@marsidev/react-turnstile';
 import { supabase } from "../../lib/supabase";
 
 const Login = () => {
   const navigate = useNavigate();
+  const location = useLocation(); // Tambahkan ini
   const [credentials, setCredentials] = useState({ email: '', password: '' });
   const [isLoading, setIsLoading] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
+  const [logoutMsg, setLogoutMsg] = useState(location.state?.pesanLogout || '');
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -54,6 +56,14 @@ const Login = () => {
           <span>Kembali ke Beranda</span>
         </Link>
       </div>
+
+      {/* Notifikasi Logout Berhasil */}
+      {logoutMsg && (
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 bg-green-50 text-green-700 border border-green-200 px-6 py-3 rounded-xl shadow-sm flex items-center gap-3 animate-in slide-in-from-top-4 fade-in font-medium text-sm">
+          <CheckCircle2 size={18} /> {logoutMsg}
+          <button onClick={() => setLogoutMsg('')} className="ml-2 text-green-500 hover:text-green-700"><X size={16}/></button>
+        </div>
+      )}
 
       <div className="glass-panel p-8 rounded-3xl w-full max-w-sm relative mt-12">
         <div className="text-center mb-8">
