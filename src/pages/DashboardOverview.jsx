@@ -1,35 +1,52 @@
 import { useState, useEffect } from 'react';
-import { Home, Users, UserPlus, Wallet, Loader2, TrendingUp, Activity } from 'lucide-react';
+import { Users, UserMinus, Activity, Wallet, Loader2, PieChart, BarChart3 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const DashboardOverview = () => {
   const [stats, setStats] = useState({
-    rumah: 0,
     keluarga: 0,
-    warga: 0,
-    potensiKas: 0
+    wargaAktif: 0,
+    kematian: 0,
+    potensiKas: 0,
+    demografi: { kk: 0, istri: 0, anak: 0, lainnya: 0 }
   });
   const [isLoading, setIsLoading] = useState(true);
   const [userData, setUserData] = useState(null);
 
   useEffect(() => {
-    // Ambil data user yang sedang login
     const user = localStorage.getItem('user');
     if (user) setUserData(JSON.parse(user));
 
     const fetchStats = async () => {
       try {
-        // Tarik jumlah total baris dari masing-masing tabel (head: true agar ringan, tidak download datanya)
-        const { count: countRumah } = await supabase.from('rumah').select('*', { count: 'exact', head: true });
+        // 1. Ambil Total KK
         const { count: countKeluarga } = await supabase.from('keluarga').select('*', { count: 'exact', head: true });
-        // Hitung warga yang statusnya 'Hidup'
-        const { count: countWarga } = await supabase.from('warga').select('*', { count: 'exact', head: true }).eq('status_warga', 'Hidup');
+        
+        // 2. Ambil Total Warga Hidup
+        const { count: countAktif } = await supabase.from('warga').select('*', { count: 'exact', head: true }).eq('status_warga', 'Hidup');
+        
+        // 3. Ambil Total Kematian
+        const { count: countMeninggal } = await supabase.from('warga').select('*', { count: 'exact', head: true }).eq('status_warga', 'Meninggal');
+
+        // 4. Tarik data khusus untuk membuat Grafik Demografi (Hanya yang Hidup)
+        const { data: demografiData } = await supabase.from('warga').select('hubungan_keluarga').eq('status_warga', 'Hidup');
+        
+        let kk = 0, istri = 0, anak = 0, lainnya = 0;
+        if (demografiData) {
+          demografiData.forEach(d => {
+            if (d.hubungan_keluarga === 'Kepala Keluarga') kk++;
+            else if (d.hubungan_keluarga === 'Istri') istri++;
+            else if (d.hubungan_keluarga === 'Anak') anak++;
+            else lainnya++;
+          });
+        }
 
         setStats({
-          rumah: countRumah || 0,
           keluarga: countKeluarga || 0,
-          warga: countWarga || 0,
-          potensiKas: (countKeluarga || 0) * 10000 // Rp 10.000 per KK
+          wargaAktif: countAktif || 0,
+          kematian: countMeninggal || 0,
+          potensiKas: (countKeluarga || 0) * 10000,
+          demografi: { kk, istri, anak, lainnya }
         });
       } catch (error) {
         console.error("Gagal mengambil statistik:", error);
@@ -41,7 +58,6 @@ const DashboardOverview = () => {
     fetchStats();
   }, []);
 
-  // Format Rupiah
   const formatRupiah = (angka) => {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(angka);
   };
@@ -49,101 +65,127 @@ const DashboardOverview = () => {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full min-h-[60vh]">
-        <Loader2 className="w-10 h-10 text-brand animate-spin" />
+        <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
       </div>
     );
   }
 
+  // Kalkulasi persentase untuk grafik
+  const totalOrang = stats.wargaAktif || 1; // Cegah pembagian dengan 0
+  const persentaseAnak = Math.round((stats.demografi.anak / totalOrang) * 100);
+  const persentaseDewasa = Math.round(((stats.demografi.kk + stats.demografi.istri) / totalOrang) * 100);
+  const persentaseLainnya = Math.round((stats.demografi.lainnya / totalOrang) * 100);
+
   return (
     <div className="space-y-6">
       {/* Header Sapaan */}
-      <div className="glass-panel p-6 rounded-2xl border-l-4 border-l-brand flex justify-between items-center">
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Selamat datang, {userData?.nama_lengkap}! 👋</h1>
-          <p className="text-slate-500 font-medium mt-1">Berikut adalah ringkasan data kependudukan dan BSKM RW 12 saat ini.</p>
+          <h1 className="text-2xl font-bold text-slate-900">Dashboard Statistik BSKM</h1>
+          <p className="text-slate-500 font-medium mt-1">Selamat bertugas, {userData?.nama_lengkap}. Berikut adalah metrik kependudukan terkini.</p>
+        </div>
+        <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg text-sm font-bold border border-blue-100">
+          Status: Sistem Online Terhubung
         </div>
       </div>
 
-      {/* Grid Kartu Statistik */}
+      {/* Grid 4 Kartu Metrik Utama */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
-        {/* Kartu 1: Total Rumah */}
-        <div className="glass-panel p-6 rounded-2xl relative overflow-hidden group">
-          <div className="absolute -right-4 -top-4 w-24 h-24 bg-blue-100 rounded-full opacity-50 group-hover:scale-110 transition-transform"></div>
-          <div className="flex justify-between items-start relative z-10">
-            <div>
-              <p className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Total Rumah</p>
-              <h2 className="text-3xl font-extrabold text-slate-800">{stats.rumah}</h2>
-            </div>
-            <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
-              <Home size={24} />
-            </div>
+        {/* Total Jiwa (Aktif) */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center">
+          <div>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total Warga (Aktif)</p>
+            <h2 className="text-3xl font-extrabold text-slate-900">{stats.wargaAktif}</h2>
           </div>
+          <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><Users size={24} /></div>
         </div>
 
-        {/* Kartu 2: Total KK */}
-        <div className="glass-panel p-6 rounded-2xl relative overflow-hidden group">
-          <div className="absolute -right-4 -top-4 w-24 h-24 bg-indigo-100 rounded-full opacity-50 group-hover:scale-110 transition-transform"></div>
-          <div className="flex justify-between items-start relative z-10">
-            <div>
-              <p className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Total KK</p>
-              <h2 className="text-3xl font-extrabold text-slate-800">{stats.keluarga}</h2>
-            </div>
-            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
-              <Users size={24} />
-            </div>
+        {/* Total KK */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center">
+          <div>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total Kepala Keluarga</p>
+            <h2 className="text-3xl font-extrabold text-slate-900">{stats.keluarga}</h2>
           </div>
+          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl"><Activity size={24} /></div>
         </div>
 
-        {/* Kartu 3: Total Jiwa */}
-        <div className="glass-panel p-6 rounded-2xl relative overflow-hidden group">
-          <div className="absolute -right-4 -top-4 w-24 h-24 bg-emerald-100 rounded-full opacity-50 group-hover:scale-110 transition-transform"></div>
-          <div className="flex justify-between items-start relative z-10">
-            <div>
-              <p className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Total Warga</p>
-              <h2 className="text-3xl font-extrabold text-slate-800">{stats.warga}</h2>
-            </div>
-            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
-              <UserPlus size={24} />
-            </div>
+        {/* Angka Kematian */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center">
+          <div>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Angka Kematian</p>
+            <h2 className="text-3xl font-extrabold text-red-600">{stats.kematian}</h2>
           </div>
+          <div className="p-3 bg-red-50 text-red-600 rounded-xl"><UserMinus size={24} /></div>
         </div>
 
-        {/* Kartu 4: Potensi Kas */}
-        <div className="glass-panel p-6 rounded-2xl relative overflow-hidden group">
-          <div className="absolute -right-4 -top-4 w-24 h-24 bg-amber-100 rounded-full opacity-50 group-hover:scale-110 transition-transform"></div>
-          <div className="flex justify-between items-start relative z-10">
-            <div>
-              <p className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Potensi BSKM/Bln</p>
-              <h2 className="text-2xl font-extrabold text-slate-800 mt-1">{formatRupiah(stats.potensiKas)}</h2>
-            </div>
-            <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
-              <Wallet size={24} />
-            </div>
+        {/* Potensi Kas */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center">
+          <div>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Potensi BSKM / Bulan</p>
+            <h2 className="text-2xl font-extrabold text-emerald-600 mt-1">{formatRupiah(stats.potensiKas)}</h2>
           </div>
+          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl"><Wallet size={24} /></div>
         </div>
 
       </div>
 
-      {/* Bagian Bawah: Info Tambahan (Mockup) */}
+      {/* Bagian Bawah: Visualisasi Grafik (Tanpa Plugin Eksternal) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-        <div className="glass-panel p-6 rounded-2xl">
-          <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-            <Activity className="text-brand" size={20}/> Aktivitas Pendataan Terbaru
-          </h3>
-          <div className="bg-white/50 rounded-xl p-8 text-center border border-dashed border-slate-300">
-            <p className="text-slate-500 text-sm">Grafik atau daftar log aktivitas warga baru akan ditampilkan di sini.</p>
+        
+        {/* Grafik 1: Proporsi Demografi Warga */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <PieChart className="text-indigo-500" size={20}/> Demografi Warga (Aktif)
+            </h3>
+          </div>
+          
+          <div className="space-y-4">
+            {/* Bar Anak */}
+            <div>
+              <div className="flex justify-between text-sm mb-1 font-semibold text-slate-700">
+                <span>Kategori Anak</span>
+                <span>{stats.demografi.anak} Jiwa ({persentaseAnak}%)</span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-3">
+                <div className="bg-emerald-500 h-3 rounded-full" style={{ width: `${persentaseAnak}%` }}></div>
+              </div>
+            </div>
+
+            {/* Bar Dewasa (KK + Istri) */}
+            <div>
+              <div className="flex justify-between text-sm mb-1 font-semibold text-slate-700">
+                <span>Kategori Dewasa (Suami & Istri)</span>
+                <span>{stats.demografi.kk + stats.demografi.istri} Jiwa ({persentaseDewasa}%)</span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-3">
+                <div className="bg-blue-500 h-3 rounded-full" style={{ width: `${persentaseDewasa}%` }}></div>
+              </div>
+            </div>
+
+            {/* Bar Lainnya */}
+            <div>
+              <div className="flex justify-between text-sm mb-1 font-semibold text-slate-700">
+                <span>Lainnya (Mertua, Famili, dll)</span>
+                <span>{stats.demografi.lainnya} Jiwa ({persentaseLainnya}%)</span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-3">
+                <div className="bg-slate-400 h-3 rounded-full" style={{ width: `${persentaseLainnya}%` }}></div>
+              </div>
+            </div>
           </div>
         </div>
         
-        <div className="glass-panel p-6 rounded-2xl">
-          <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-            <TrendingUp className="text-emerald-500" size={20}/> Status Pembayaran Kas
-          </h3>
-          <div className="bg-white/50 rounded-xl p-8 text-center border border-dashed border-slate-300">
-            <p className="text-slate-500 text-sm">Sistem tracking lunas/nunggak iuran BSKM akan segera hadir.</p>
-          </div>
+        {/* Grafik 2: Rincian Keuangan Kas BSKM */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center items-center text-center">
+          <BarChart3 className="text-slate-300 w-16 h-16 mb-4" />
+          <h3 className="text-lg font-bold text-slate-800 mb-2">Modul Keuangan Segera Hadir</h3>
+          <p className="text-sm text-slate-500 max-w-sm">
+            Saat ini perhitungan potensi kas adalah <strong>{formatRupiah(stats.potensiKas)}</strong> yang berasal dari <strong>{stats.keluarga} Kepala Keluarga</strong>. Fitur pelacakan iuran warga per-blok sedang dikembangkan.
+          </p>
         </div>
+
       </div>
     </div>
   );

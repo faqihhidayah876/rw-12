@@ -24,21 +24,34 @@ const Login = () => {
     setIsLoading(true);
     
     try {
-      // Memanggil fungsi RPC (Stored Procedure) di Supabase yang mengecek password Hash
-      const { data, error } = await supabase.rpc('cek_login_pengurus', {
-        input_email: credentials.email,
-        input_password: credentials.password
+      // 1. Login menggunakan Supabase Auth resmi (agar mendapatkan token keamanan 'authenticated')
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: credentials.email,
+        password: credentials.password
       });
 
-      // Jika ada error dari server atau data tidak ditemukan (array kosong)
-      if (error || !data || data.length === 0) {
-        console.error("Login Error:", error);
-        alert('Email atau password salah! Pastikan huruf besar/kecilnya tepat.');
-      } else {
-        // Login Berhasil! Simpan data (id, email, role, nama_lengkap) ke localStorage
-        localStorage.setItem('user', JSON.stringify(data[0]));
-        navigate('/dashboard'); 
+      if (authError) {
+        console.error("Login Error:", authError);
+        alert('Email atau password salah!');
+        return;
       }
+
+      // 2. Jika Auth berhasil, tarik informasi Role (Admin/RW) dari tabel pengurus kita
+      const { data: pengurusData, error: pengurusError } = await supabase
+        .from('pengurus')
+        .select('*')
+        .eq('email', credentials.email)
+        .single();
+
+      if (pengurusError || !pengurusData) {
+        alert('Akun terdaftar, namun tidak memiliki akses pengurus.');
+        return;
+      }
+
+      // 3. Simpan data lengkap ke LocalStorage dan masuk ke Dashboard
+      localStorage.setItem('user', JSON.stringify(pengurusData));
+      navigate('/dashboard'); 
+      
     } catch (err) {
       console.error("Koneksi Error:", err);
       alert('Terjadi kesalahan koneksi ke server.');

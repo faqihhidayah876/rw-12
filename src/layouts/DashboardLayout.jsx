@@ -102,7 +102,7 @@ const DashboardLayout = () => {
                 onClick={() => { setShowProfileMenu(false); setShowLogoutModal(true); }} 
                 className="flex items-center gap-2 w-full p-2.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-md transition-colors"
               >
-                <LogOut size={16} /> Keluar dari Sistem
+                <LogOut size={16} /> Logout
               </button>
             </div>
           )}

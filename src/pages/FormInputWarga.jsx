@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { MapPin, Camera, Save, ArrowLeft, CheckCircle2, Loader2, Plus, Trash2 } from 'lucide-react';
+import imageCompression from 'browser-image-compression';
 import { supabase } from '../lib/supabase';
 
 const FormInputWarga = () => {
@@ -14,7 +15,6 @@ const FormInputWarga = () => {
     file_kk: null,
   });
 
-  // State BARU: Array dinamis untuk anggota keluarga
   const [anggotaWarga, setAnggotaWarga] = useState([
     { nik: '', nama_lengkap: '', hubungan_keluarga: 'Kepala Keluarga' }
   ]);
@@ -43,7 +43,6 @@ const FormInputWarga = () => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-    // Jika ganti nama kepala keluarga, otomatis update nama di anggota urutan pertama
     if (name === 'nama_kepala_keluarga') {
       const newAnggota = [...anggotaWarga];
       newAnggota[0].nama_lengkap = value;
@@ -53,7 +52,6 @@ const FormInputWarga = () => {
 
   const handleFileChange = (e) => setFormData((prev) => ({ ...prev, file_kk: e.target.files[0] }));
 
-  // --- Fungsi Dinamis Anggota Keluarga ---
   const handleAddAnggota = () => {
     setAnggotaWarga([...anggotaWarga, { nik: '', nama_lengkap: '', hubungan_keluarga: 'Istri' }]);
   };
@@ -70,7 +68,7 @@ const FormInputWarga = () => {
     setAnggotaWarga(newAnggota);
   };
 
-  // --- SUBMIT DATA KE 3 TABEL SEKALIGUS ---
+  // --- SUBMIT DATA VIA RPC (1 Panggilan untuk Semua Tabel) ---
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -79,7 +77,6 @@ const FormInputWarga = () => {
       setValidationMsg('Anda belum mengaktifkan GPS. Silakan izinkan akses lokasi di browser atau nyalakan GPS HP Anda, lalu refresh halaman.');
       return;
     }
-    // Validasi Kolom Kosong
     if (!formData.blok_nomor) {
       setValidationMsg('Anda belum mengisi kolom Blok Rumah. Silakan isi terlebih dahulu.');
       return;
@@ -93,62 +90,44 @@ const FormInputWarga = () => {
       return;
     }
 
-    // Jika lolos validasi, lanjut ke proses submit...
     setIsSubmitting(true);
 
     try {
       let fileUrl = null;
 
-      // 1. UPLOAD FOTO KK
+      // 1. UPLOAD FOTO KK (Dengan Kompresi)
       if (formData.file_kk) {
-        const fileExt = formData.file_kk.name.split('.').pop();
+        const options = { maxSizeMB: 0.5, maxWidthOrHeight: 1920, useWebWorker: true };
+        const compressedFile = await imageCompression(formData.file_kk, options);
+        
+        const fileExt = compressedFile.name.split('.').pop();
         const fileName = `${formData.no_kk}_${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage.from('berkas_warga').upload(fileName, formData.file_kk);
+        
+        const { error: uploadError } = await supabase.storage.from('berkas_warga').upload(fileName, compressedFile);
         if (uploadError) throw uploadError;
         
         const { data: publicUrlData } = supabase.storage.from('berkas_warga').getPublicUrl(fileName);
         fileUrl = publicUrlData.publicUrl;
       }
 
-      // 2. SIMPAN/CEK RUMAH
-      let rumahId = null;
-      const { data: existingRumah } = await supabase.from('rumah').select('id').eq('blok_nomor', formData.blok_nomor).maybeSingle();
+      // 2. KIRIM SEMUA DATA KE FUNGSI PINTAR SUPABASE (RPC)
+      const { error: rpcError } = await supabase.rpc('kirim_data_warga_baru', {
+        p_blok_nomor: formData.blok_nomor,
+        p_lat: location.lat,
+        p_lng: location.lng,
+        p_no_kk: formData.no_kk,
+        p_nama_kepala: formData.nama_kepala_keluarga,
+        p_file_url: fileUrl,
+        p_rt: formData.rt,
+        p_no_hp: formData.no_hp,
+        p_agama: formData.agama,
+        p_anggota: anggotaWarga
+      });
 
-      if (existingRumah) {
-        rumahId = existingRumah.id;
-      } else {
-        const { data: newRumah, error: insertRumahError } = await supabase
-          .from('rumah').insert([{ blok_nomor: formData.blok_nomor, koordinat_lat: location.lat, koordinat_lng: location.lng, status_hunian: 'Berpenghuni' }]).select().single();
-        if (insertRumahError) throw insertRumahError;
-        rumahId = newRumah.id;
-      }
+      if (rpcError) throw rpcError;
 
-      // 3. SIMPAN KELUARGA
-      const { data: newKeluarga, error: keluargaError } = await supabase
-        .from('keluarga')
-        .insert([{
-          rumah_id: rumahId, no_kk: formData.no_kk, nama_kepala_keluarga: formData.nama_kepala_keluarga,
-          file_kk_url: fileUrl, status_domisili: 'Tetap', rt: formData.rt, no_hp: formData.no_hp, agama: formData.agama
-        }])
-        .select().single();
-      
-      if (keluargaError) throw keluargaError;
-
-      // 4. SIMPAN INDIVIDU WARGA SECARA BATCH
-      const dataWarga = anggotaWarga.map(anggota => ({
-        keluarga_id: newKeluarga.id,
-        nik: anggota.nik,
-        nama_lengkap: anggota.nama_lengkap,
-        hubungan_keluarga: anggota.hubungan_keluarga,
-        status_warga: 'Hidup'
-      }));
-
-      const { error: wargaError } = await supabase.from('warga').insert(dataWarga);
-      if (wargaError) throw wargaError;
-
+      // 3. TAMPILKAN POP-UP SUKSES & RESET FORM
       setShowSuccessModal(true);
-      
-      // Reset form
       setFormData({ blok_nomor: '', no_kk: '', nama_kepala_keluarga: '', rt: '01', no_hp: '', agama: 'Islam', file_kk: null });
       setAnggotaWarga([{ nik: '', nama_lengkap: '', hubungan_keluarga: 'Kepala Keluarga' }]);
 
@@ -221,7 +200,6 @@ const FormInputWarga = () => {
               {formData.file_kk ? (
                 <div className="relative w-full h-24 bg-white/60 rounded-xl flex items-center justify-center border-2 border-brand/40 border-solid">
                   <p className="text-xs font-medium text-slate-700 px-4 text-center">{formData.file_kk.name}</p>
-                  {/* Tombol Silang untuk Cancel */}
                   <button 
                     type="button" 
                     onClick={() => setFormData(prev => ({ ...prev, file_kk: null }))}

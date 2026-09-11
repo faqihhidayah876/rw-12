@@ -18,7 +18,7 @@ const AdminDashboard = () => {
         
         <div className="relative z-10 mt-8">
           <h1 className="text-4xl font-extrabold text-brand-dark mb-2 tracking-tight">BSKM RW 12</h1>
-          <p className="text-slate-500 mb-8 font-medium">Sistem Geospasial & Kas Terpadu</p>
+          <p className="text-slate-500 mb-8 font-medium">Sistem Geospasial & Pendataan Warga</p>
           
           <div className="flex flex-col gap-4">
             <Link to="/form" className="glass-button px-6 py-3 rounded-xl font-semibold text-lg flex items-center justify-center gap-2">
