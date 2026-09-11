@@ -53,7 +53,6 @@ const Login = () => {
       <div className="absolute top-6 left-6 z-50">
         <Link to="/" className="flex items-center gap-2 bg-white/60 hover:bg-white/90 backdrop-blur-md px-4 py-2 rounded-full shadow-sm text-slate-700 font-bold transition-all border border-white">
           <ArrowLeft size={20} />
-          <span>Kembali ke Beranda</span>
         </Link>
       </div>
 
@@ -98,13 +97,14 @@ const Login = () => {
             />
           </div>
 
-          <div className="flex justify-center mt-2">
+          {/* Cloudflare Turnstile Widget (Asli) */}
+            <div className="flex justify-center mt-2 min-h-[65px]">
             <Turnstile 
-              siteKey="1x00000000000000000000AA" 
-              onSuccess={(token) => setTurnstileToken(token)}
-              options={{ theme: 'light' }}
+                siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY} 
+                onSuccess={(token) => setTurnstileToken(token)}
+                options={{ theme: 'light' }}
             />
-          </div>
+            </div>
 
           <button 
             type="submit" 
