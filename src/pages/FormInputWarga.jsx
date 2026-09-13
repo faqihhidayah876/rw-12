@@ -179,6 +179,7 @@ const FormInputWarga = () => {
               <label className="block text-xs font-bold text-slate-700 mb-1">Nama Kepala Keluarga (Sesuai KK)</label>
               <input type="text" name="nama_kepala_keluarga" value={formData.nama_kepala_keluarga} onChange={handleChange} className="w-full bg-white/70 border border-white focus:border-brand focus:ring-2 focus:ring-brand/30 rounded-xl px-3 py-2 outline-none" placeholder="Nama Lengkap..." />
             </div>
+
             <div className="grid grid-cols-2 gap-3 mt-3">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Agama</label>
@@ -191,6 +192,24 @@ const FormInputWarga = () => {
                   <option value="Buddha">Buddha</option>
                   <option value="Konghucu">Konghucu</option>
                   <option value="Lainnya">Lainnya</option>
+                </select>
+              </div>
+
+              {/* Dropdown RT — RW 12 memiliki 6 RT */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Pilih RT</label>
+                <select 
+                  name="rt"
+                  value={formData.rt} 
+                  onChange={handleChange} 
+                  className="w-full bg-white/70 border border-white focus:border-brand focus:ring-2 focus:ring-brand/30 rounded-xl px-3 py-2 outline-none text-sm"
+                >
+                  <option value="01">RT 01</option>
+                  <option value="02">RT 02</option>
+                  <option value="03">RT 03</option>
+                  <option value="04">RT 04</option>
+                  <option value="05">RT 05</option>
+                  <option value="06">RT 06</option>
                 </select>
               </div>
             </div>

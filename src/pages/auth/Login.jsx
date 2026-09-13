@@ -82,7 +82,7 @@ const Login = () => {
           <div className="w-16 h-16 bg-brand-light/50 rounded-full flex items-center justify-center mx-auto mb-3 shadow-inner">
             <Lock className="text-brand w-8 h-8" />
           </div>
-          <h2 className="text-2xl font-bold text-brand-dark">Portal Pengurus</h2>
+          <h2 className="text-2xl font-bold text-brand-dark">Login Pengurus</h2>
           <p className="text-sm text-slate-500">Silakan login untuk akses data</p>
         </div>
 
