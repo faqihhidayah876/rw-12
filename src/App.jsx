@@ -6,6 +6,9 @@ import Login from './pages/auth/Login';
 import DashboardLayout from './layouts/DashboardLayout';
 import DashboardOverview from './pages/DashboardOverview';
 import DataWarga from './pages/DataWarga';
+import DataRumah from './pages/DataRumah';
+import DaftarKematian from './pages/DaftarKematian';
+import DaftarKelahiran from './pages/DaftarKelahiran';
 
 function App() {
   return (
@@ -20,9 +23,12 @@ function App() {
         <Route path="/dashboard" element={<DashboardLayout />}>
           <Route index element={<DashboardOverview />} />
           <Route path="warga" element={<DataWarga />} />
+          <Route path="rumah" element={<DataRumah />} />
+          <Route path="kematian" element={<DaftarKematian />} />
+          <Route path="kelahiran" element={<DaftarKelahiran />} />
         </Route>
 
-        {/* Peta punya halamannya sendiri (Bisa juga dimasukkan ke layout dashboard jika diinginkan) */}
+        {/* Peta punya halamannya sendiri */}
         <Route path="/peta" element={<PetaWarga />} />
       </Routes>
     </BrowserRouter>
