@@ -134,27 +134,19 @@ const FormInputWarga = () => {
   };
 
   // ============================================================
-  // --- OCR SCAN KK VIA MISTRAL AI ---
+  // --- OCR SCAN KK VIA VERCEL API PROXY (/api/ocr) ---
   // ============================================================
   const handleScanOCR = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    // Simpan file ke state form (siap diupload nanti)
     setFormData((prev) => ({ ...prev, file_kk: file }));
-
-    if (!import.meta.env.VITE_MISTRAL_API_KEY) {
-      setAlertMsg({
-        show: true,
-        type: 'error',
-        message: 'API Key Mistral belum diset. Cek file .env Anda.'
-      });
-      if (e.target) e.target.value = '';
-      return;
-    }
 
     setIsScanningOCR(true);
 
     try {
+      // 1. Convert gambar ke Base64
       const base64Image = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
@@ -162,36 +154,30 @@ const FormInputWarga = () => {
         reader.onerror = (error) => reject(error);
       });
 
-      const response = await fetch(import.meta.env.VITE_MISTRAL_OCR_ENDPOINT, {
+      // 2. Tembak ke endpoint Vercel lokal (server-side proxy)
+      //    API Key Mistral disimpan aman di server, TIDAK di client.
+      const response = await fetch('/api/ocr', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_MISTRAL_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: import.meta.env.VITE_MISTRAL_OCR_MODEL || 'mistral-ocr-latest',
-          document: { type: 'image_url', image_url: base64Image },
-          include_image_base64: true,
-          include_blocks: true
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64Image })
       });
 
-      // --- LOGIKA PENGAMANAN KUOTA HABIS ---
+      // 3. Error handling
       if (!response.ok) {
-        const errorBody = await response.text();
-        console.error('Mistral OCR Error:', errorBody);
+        const errorBody = await response.text().catch(() => '');
+        console.error('OCR API Error:', response.status, errorBody);
 
         if (response.status === 429) {
           throw new Error('QUOTA_EXCEEDED');
-        } else if (response.status === 401) {
-          throw new Error('API_KEY_INVALID');
-        } else {
-          throw new Error(`Server Error: ${response.status}`);
         }
+        throw new Error('API_ERROR');
       }
 
+      // 4. Parse response dari proxy
       const responseData = await response.json();
 
+      // Response dari proxy = response langsung dari Mistral
+      // Struktur: { pages: [{ index, markdown, ... }], model, usage_info }
       const fullMarkdown = (responseData.pages || [])
         .map((p) => p.markdown || '')
         .join('\n')
@@ -203,8 +189,10 @@ const FormInputWarga = () => {
 
       console.log('📄 Raw OCR markdown (KK):', fullMarkdown);
 
+      // 5. Jalankan parser pintar
       const extractedData = extractDataFromOCR(fullMarkdown);
 
+      // 6. Auto-fill Form Info Dasar
       setFormData((prev) => ({
         ...prev,
         no_kk: extractedData.no_kk || prev.no_kk,
@@ -212,10 +200,12 @@ const FormInputWarga = () => {
           extractedData.anggota[0]?.nama_lengkap || prev.nama_kepala_keluarga,
       }));
 
+      // 7. Auto-fill daftar anggota keluarga
       if (extractedData.anggota.length > 0) {
         setAnggotaWarga(extractedData.anggota);
       }
 
+      // 8. Notifikasi sukses
       setAlertMsg({
         show: true,
         type: 'success',
@@ -232,8 +222,8 @@ const FormInputWarga = () => {
 
       if (error.message === 'QUOTA_EXCEEDED') {
         setValidationMsg('Limit AI Tercapai! Foto KK sudah aman terlampir. Silakan Lanjutkan KETIK MANUAL Nomor KK dan Nama Anggota Keluarga, lalu tekan Simpan.');
-      } else if (error.message === 'API_KEY_INVALID') {
-        setValidationMsg('Koneksi API AI ditolak. Foto KK sudah aman terlampir. Silakan lanjutkan input data secara manual.');
+      } else if (error.message === 'API_ERROR') {
+        setValidationMsg('Koneksi ke server AI gagal. Foto KK sudah aman terlampir. Silakan lanjutkan input data secara manual, atau coba lagi nanti.');
       } else {
         setValidationMsg('AI gagal membaca teks pada gambar. Foto KK sudah aman terlampir. Silakan ketik data secara manual.');
       }
