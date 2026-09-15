@@ -235,8 +235,6 @@ const DataWarga = () => {
         throw new Error('AI tidak mengembalikan teks dari gambar KTP. Coba foto yang lebih jelas.');
       }
 
-      console.log('📄 Raw OCR markdown (KTP):', fullMarkdown);
-
       // 5. Parsing NIK (16 digit berurutan)
       const nikMatch = fullMarkdown.match(/\b(\d{16})\b/);
       const nik = nikMatch ? nikMatch[1] : '';
