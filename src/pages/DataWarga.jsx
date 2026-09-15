@@ -51,7 +51,7 @@ const DataWarga = () => {
   });
   const [isNewborn, setIsNewborn] = useState(false);
 
-  // State & ref untuk fitur OCR Scan KTP (Mistral AI)
+  // State & ref untuk fitur OCR Scan KTP (via Vercel API proxy)
   const [isScanningKTP, setIsScanningKTP] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -187,21 +187,11 @@ const DataWarga = () => {
   };
 
   // ============================================================
-  // --- OCR SCAN KTP VIA MISTRAL OCR API ---
+  // --- OCR SCAN KTP VIA VERCEL API PROXY (/api/ocr) ---
   // ============================================================
   const handleScanKTP = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
-    // Validasi environment variables
-    if (!import.meta.env.VITE_MISTRAL_API_KEY) {
-      setAlertMsg({
-        show: true,
-        type: 'error',
-        message: 'API Key Mistral belum diset. Cek file .env Anda.'
-      });
-      return;
-    }
 
     setIsScanningKTP(true);
     try {
@@ -213,33 +203,28 @@ const DataWarga = () => {
         reader.onerror = (error) => reject(error);
       });
 
-      // 2. Kirim gambar ke Mistral OCR Endpoint
-      const response = await fetch(import.meta.env.VITE_MISTRAL_OCR_ENDPOINT, {
+      // 2. Tembak ke endpoint Vercel lokal (Server-side proxy)
+      //    API Key Mistral disimpan aman di server, TIDAK di client.
+      const response = await fetch('/api/ocr', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_MISTRAL_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: import.meta.env.VITE_MISTRAL_OCR_MODEL,
-          document: {
-            type: "image_url",
-            image_url: base64Image
-          },
-          include_image_base64: true,
-          include_blocks: true
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64Image })
       });
 
+      // 3. Error handling
       if (!response.ok) {
-        const errorBody = await response.text();
-        console.error('Mistral OCR Error:', errorBody);
-        throw new Error(`Gagal menghubungi Mistral OCR (HTTP ${response.status}). Cek API Key Anda.`);
+        const errorBody = await response.text().catch(() => '');
+        console.error('OCR API Error:', response.status, errorBody);
+
+        if (response.status === 429) {
+          throw new Error('QUOTA_EXCEEDED');
+        }
+        throw new Error('API_ERROR');
       }
 
       const responseData = await response.json();
 
-      // 3. Gabungkan seluruh teks markdown dari semua halaman
+      // 4. Gabungkan seluruh teks markdown dari semua halaman
       // Struktur response OCR: { pages: [{ index, markdown, images, dimensions }], model, usage_info }
       const fullMarkdown = (responseData.pages || [])
         .map((p) => p.markdown || '')
@@ -250,13 +235,13 @@ const DataWarga = () => {
         throw new Error('AI tidak mengembalikan teks dari gambar KTP. Coba foto yang lebih jelas.');
       }
 
-      console.log('📄 Raw OCR markdown:', fullMarkdown);
+      console.log('📄 Raw OCR markdown (KTP):', fullMarkdown);
 
-      // 4. Parsing NIK (16 digit berurutan)
+      // 5. Parsing NIK (16 digit berurutan)
       const nikMatch = fullMarkdown.match(/\b(\d{16})\b/);
       const nik = nikMatch ? nikMatch[1] : '';
 
-      // 5. Parsing Nama
+      // 6. Parsing Nama
       // Coba beberapa pattern: "Nama: X", "Nama : X", "**Nama:** X", "Nama Lengkap: X"
       let nama = '';
       const namaMatch =
@@ -268,7 +253,7 @@ const DataWarga = () => {
       // Bersihkan sisa karakter markdown jika ada
       nama = nama.replace(/[*_`#]/g, '').trim().toUpperCase();
 
-      // 6. Auto-fill form
+      // 7. Auto-fill form
       if (nik || nama) {
         setNewMemberForm((prev) => ({
           ...prev,
@@ -296,7 +281,26 @@ const DataWarga = () => {
 
     } catch (error) {
       console.error(error);
-      setAlertMsg({ show: true, type: 'error', message: 'Gagal memindai KTP: ' + error.message });
+
+      if (error.message === 'QUOTA_EXCEEDED') {
+        setAlertMsg({
+          show: true,
+          type: 'error',
+          message: 'Limit AI Tercapai / Kuota Habis! Silakan isi data anggota secara manual.',
+        });
+      } else if (error.message === 'API_ERROR') {
+        setAlertMsg({
+          show: true,
+          type: 'error',
+          message: 'Koneksi ke server AI gagal. Silakan isi data anggota secara manual, atau coba lagi nanti.',
+        });
+      } else {
+        setAlertMsg({
+          show: true,
+          type: 'error',
+          message: 'Gagal memindai KTP: ' + error.message,
+        });
+      }
     } finally {
       setIsScanningKTP(false);
       // Kosongkan input file agar bisa pilih gambar yang sama lagi

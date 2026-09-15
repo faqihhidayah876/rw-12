@@ -187,8 +187,6 @@ const FormInputWarga = () => {
         throw new Error('AI tidak mengembalikan teks dari gambar KK. Coba foto yang lebih jelas.');
       }
 
-      console.log('📄 Raw OCR markdown (KK):', fullMarkdown);
-
       // 5. Jalankan parser pintar
       const extractedData = extractDataFromOCR(fullMarkdown);
 
