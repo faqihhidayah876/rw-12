@@ -166,20 +166,28 @@ const FormInputWarga = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_MISTRAL_API_KEY}`,
+          'Authorization': `Bearer ${import.meta.env.VITE_MISTRAL_API_KEY}`
         },
         body: JSON.stringify({
           model: import.meta.env.VITE_MISTRAL_OCR_MODEL || 'mistral-ocr-latest',
           document: { type: 'image_url', image_url: base64Image },
           include_image_base64: true,
-          include_blocks: true,
-        }),
+          include_blocks: true
+        })
       });
 
+      // --- LOGIKA PENGAMANAN KUOTA HABIS ---
       if (!response.ok) {
         const errorBody = await response.text();
         console.error('Mistral OCR Error:', errorBody);
-        throw new Error(`Gagal menghubungi Mistral OCR (HTTP ${response.status}).`);
+
+        if (response.status === 429) {
+          throw new Error('QUOTA_EXCEEDED');
+        } else if (response.status === 401) {
+          throw new Error('API_KEY_INVALID');
+        } else {
+          throw new Error(`Server Error: ${response.status}`);
+        }
       }
 
       const responseData = await response.json();
@@ -218,11 +226,17 @@ const FormInputWarga = () => {
 
     } catch (error) {
       console.error(error);
-      setAlertMsg({
-        show: true,
-        type: 'error',
-        message: 'Gagal mengekstrak data dari gambar KK: ' + error.message,
-      });
+
+      // Kosongkan foto agar pengguna bisa input manual
+      setFormData((prev) => ({ ...prev, file_kk: null }));
+
+      if (error.message === 'QUOTA_EXCEEDED') {
+        setValidationMsg('Limit AI Tercapai / Kuota Habis! Jangan panik, silakan foto ulang dokumen KK secara normal, lalu KETIK MANUAL Nomor KK dan Nama Kepala Keluarga untuk melanjutkan pendataan.');
+      } else if (error.message === 'API_KEY_INVALID') {
+        setValidationMsg('Koneksi API ditolak. Hubungi Admin BSKM untuk memeriksa kunci API Mistral.');
+      } else {
+        setValidationMsg('Gagal membaca gambar. Pastikan foto terang, tidak blur, dan internet stabil. Jika terus gagal, silakan ketik data secara manual.');
+      }
     } finally {
       setIsScanningOCR(false);
       if (e.target) e.target.value = '';
@@ -256,6 +270,18 @@ const FormInputWarga = () => {
     setIsSubmitting(true);
 
     try {
+      // --- 0. VALIDASI ANTI-DUPLIKAT NOMOR KK ---
+      const { data: cekKK } = await supabase
+        .from('keluarga')
+        .select('no_kk')
+        .eq('no_kk', formData.no_kk);
+
+      if (cekKK && cekKK.length > 0) {
+        setValidationMsg(`Peringatan: Nomor KK ${formData.no_kk} sudah pernah didata sebelumnya! Silakan periksa kembali.`);
+        setIsSubmitting(false);
+        return;
+      }
+
       let fileUrl = null;
 
       // 1. UPLOAD FOTO KK (Dengan Kompresi)
