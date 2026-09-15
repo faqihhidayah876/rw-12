@@ -144,6 +144,13 @@ const FormInputWarga = () => {
     const file = e.target.files[0];
     if (!file) return;
 
+    // Validasi dini: jika user belum verifikasi Turnstile, minta selesaikan dulu
+    if (!turnstileToken) {
+      setValidationMsg('Harap tunggu beberapa detik sampai verifikasi keamanan (Cloudflare) selesai sebelum memindai KK.');
+      if (e.target) e.target.value = '';
+      return;
+    }
+
     // Simpan file ke state form (siap diupload nanti)
     setFormData((prev) => ({ ...prev, file_kk: file }));
 
@@ -158,15 +165,21 @@ const FormInputWarga = () => {
         reader.onerror = (error) => reject(error);
       });
 
-      // 2. Tembak ke endpoint Vercel lokal (server-side proxy)
-      //    API Key Mistral disimpan aman di server, TIDAK di client.
+      // 2. Ambil session Supabase jika ada (untuk jaga-jaga kalau diakses admin)
+      const session = supabase.auth.getSession();
+      const accessToken = (await session).data.session?.access_token;
+
+      // 3. Tembak ke endpoint Vercel dengan menyertakan turnstileToken
       const response = await fetch('/api/ocr', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base64Image })
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {})
+        },
+        body: JSON.stringify({ base64Image, turnstileToken })
       });
 
-      // 3. Error handling
+      // 4. Error handling
       if (!response.ok) {
         const errorBody = await response.text().catch(() => '');
         console.error('OCR API Error:', response.status, errorBody);
@@ -174,10 +187,13 @@ const FormInputWarga = () => {
         if (response.status === 429) {
           throw new Error('QUOTA_EXCEEDED');
         }
+        if (response.status === 403) {
+          throw new Error('BOT_DETECTED');
+        }
         throw new Error('API_ERROR');
       }
 
-      // 4. Parse response dari proxy
+      // 5. Parse response dari proxy
       const responseData = await response.json();
 
       const fullMarkdown = (responseData.pages || [])
@@ -189,10 +205,10 @@ const FormInputWarga = () => {
         throw new Error('AI tidak mengembalikan teks dari gambar KK. Coba foto yang lebih jelas.');
       }
 
-      // 5. Jalankan parser pintar
+      // 6. Jalankan parser pintar
       const extractedData = extractDataFromOCR(fullMarkdown);
 
-      // 6. Auto-fill Form Info Dasar
+      // 7. Auto-fill Form Info Dasar
       setFormData((prev) => ({
         ...prev,
         no_kk: extractedData.no_kk || prev.no_kk,
@@ -200,12 +216,12 @@ const FormInputWarga = () => {
           extractedData.anggota[0]?.nama_lengkap || prev.nama_kepala_keluarga,
       }));
 
-      // 7. Auto-fill daftar anggota keluarga
+      // 8. Auto-fill daftar anggota keluarga
       if (extractedData.anggota.length > 0) {
         setAnggotaWarga(extractedData.anggota);
       }
 
-      // 8. Notifikasi sukses
+      // 9. Notifikasi sukses
       setAlertMsg({
         show: true,
         type: 'success',
@@ -220,6 +236,8 @@ const FormInputWarga = () => {
       // Foto KK TETAP TERSIMPAN di state form (tidak di-reset)
       if (error.message === 'QUOTA_EXCEEDED') {
         setValidationMsg('Limit AI Tercapai! Foto KK sudah aman terlampir. Silakan Lanjutkan KETIK MANUAL Nomor KK dan Nama Anggota Keluarga, lalu tekan Simpan.');
+      } else if (error.message === 'BOT_DETECTED') {
+        setValidationMsg('Verifikasi keamanan gagal. Silakan refresh halaman dan coba lagi.');
       } else if (error.message === 'API_ERROR') {
         setValidationMsg('Koneksi ke server AI gagal. Foto KK sudah aman terlampir. Silakan lanjutkan input data secara manual, atau coba lagi nanti.');
       } else {
@@ -237,7 +255,7 @@ const FormInputWarga = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // --- TAMBAHKAN VALIDASI ANTI-BOT INI ---
+    // --- VALIDASI ANTI-BOT ---
     if (!turnstileToken) {
       setValidationMsg('Verifikasi keamanan belum selesai. Harap tunggu sistem memastikan Anda bukan robot.');
       return;
@@ -278,12 +296,14 @@ const FormInputWarga = () => {
 
       let fileUrl = null;
 
-      // 1. UPLOAD FOTO KK (Dengan Kompresi)
+      // 1. UPLOAD FOTO KK (Menggunakan Random UUID demi Privasi PII)
       if (formData.file_kk) {
         const options = { maxSizeMB: 0.5, maxWidthOrHeight: 1920, useWebWorker: true };
         const compressedFile = await imageCompression(formData.file_kk, options);
         const fileExt = compressedFile.name.split('.').pop();
-        const fileName = `${formData.no_kk}_${Date.now()}.${fileExt}`;
+
+        // --- DIUBAH MENJADI CRYPTO UUID ---
+        const fileName = `${crypto.randomUUID()}.${fileExt}`;
 
         const { error: uploadError } = await supabase.storage
           .from('berkas_warga')
