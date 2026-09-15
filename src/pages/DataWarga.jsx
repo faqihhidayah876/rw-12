@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   Loader2, Search, Image as ImageIcon, Edit, Trash2, X,
   ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, ShieldAlert,
-  MapPin, UserPlus
+  MapPin, UserPlus, ScanText
 } from 'lucide-react';
 
 // Import Peta
@@ -49,7 +49,11 @@ const DataWarga = () => {
     hubungan_keluarga: 'Anak',
     status_warga: 'Hidup',
   });
-  const [isNewborn, setIsNewborn] = useState(false); // STATE BARU
+  const [isNewborn, setIsNewborn] = useState(false);
+
+  // State & ref untuk fitur OCR Scan KTP (Mistral AI)
+  const [isScanningKTP, setIsScanningKTP] = useState(false);
+  const fileInputRef = useRef(null);
 
   // Cek role admin
   const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -65,7 +69,8 @@ const DataWarga = () => {
       const { data, error } = await supabase
         .from('warga')
         .select(`
-          id, nik, nama_lengkap, hubungan_keluarga, status_warga, tanggal_kematian,
+          id, nik, nama_lengkap, hubungan_keluarga, status_warga,
+          tanggal_kematian, tanggal_kelahiran_tercatat,
           keluarga (
             id, no_kk, file_kk_url, rt,
             rumah ( id, blok_nomor, koordinat_lat, koordinat_lng )
@@ -181,6 +186,124 @@ const DataWarga = () => {
     }
   };
 
+  // ============================================================
+  // --- OCR SCAN KTP VIA MISTRAL OCR API ---
+  // ============================================================
+  const handleScanKTP = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Validasi environment variables
+    if (!import.meta.env.VITE_MISTRAL_API_KEY) {
+      setAlertMsg({
+        show: true,
+        type: 'error',
+        message: 'API Key Mistral belum diset. Cek file .env Anda.'
+      });
+      return;
+    }
+
+    setIsScanningKTP(true);
+    try {
+      // 1. Convert gambar KTP ke Base64 (Data URI)
+      const base64Image = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = (error) => reject(error);
+      });
+
+      // 2. Kirim gambar ke Mistral OCR Endpoint
+      const response = await fetch(import.meta.env.VITE_MISTRAL_OCR_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_MISTRAL_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: import.meta.env.VITE_MISTRAL_OCR_MODEL,
+          document: {
+            type: "image_url",
+            image_url: base64Image
+          },
+          include_image_base64: true,
+          include_blocks: true
+        })
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.error('Mistral OCR Error:', errorBody);
+        throw new Error(`Gagal menghubungi Mistral OCR (HTTP ${response.status}). Cek API Key Anda.`);
+      }
+
+      const responseData = await response.json();
+
+      // 3. Gabungkan seluruh teks markdown dari semua halaman
+      // Struktur response OCR: { pages: [{ index, markdown, images, dimensions }], model, usage_info }
+      const fullMarkdown = (responseData.pages || [])
+        .map((p) => p.markdown || '')
+        .join('\n')
+        .trim();
+
+      if (!fullMarkdown) {
+        throw new Error('AI tidak mengembalikan teks dari gambar KTP. Coba foto yang lebih jelas.');
+      }
+
+      console.log('📄 Raw OCR markdown:', fullMarkdown);
+
+      // 4. Parsing NIK (16 digit berurutan)
+      const nikMatch = fullMarkdown.match(/\b(\d{16})\b/);
+      const nik = nikMatch ? nikMatch[1] : '';
+
+      // 5. Parsing Nama
+      // Coba beberapa pattern: "Nama: X", "Nama : X", "**Nama:** X", "Nama Lengkap: X"
+      let nama = '';
+      const namaMatch =
+        fullMarkdown.match(/(?:\*\*)?Nama(?:\s*Lengkap)?(?:\*\*)?\s*[:\-]\s*([^\n\r*_`]+)/i);
+      if (namaMatch) {
+        nama = namaMatch[1].trim();
+      }
+
+      // Bersihkan sisa karakter markdown jika ada
+      nama = nama.replace(/[*_`#]/g, '').trim().toUpperCase();
+
+      // 6. Auto-fill form
+      if (nik || nama) {
+        setNewMemberForm((prev) => ({
+          ...prev,
+          nik: nik || prev.nik,
+          nama_lengkap: nama || prev.nama_lengkap,
+        }));
+
+        const detected = [];
+        if (nik) detected.push(`NIK: ${nik}`);
+        if (nama) detected.push(`Nama: ${nama}`);
+
+        setAlertMsg({
+          show: true,
+          type: 'success',
+          message: `KTP berhasil dipindai! Terdeteksi → ${detected.join(' | ')}`,
+        });
+      } else {
+        // Kalau parsing gagal, tampilkan info raw text
+        setAlertMsg({
+          show: true,
+          type: 'error',
+          message: 'Gambar berhasil dibaca, tapi NIK/Nama tidak terdeteksi. Coba foto yang lebih jelas atau isi manual.',
+        });
+      }
+
+    } catch (error) {
+      console.error(error);
+      setAlertMsg({ show: true, type: 'error', message: 'Gagal memindai KTP: ' + error.message });
+    } finally {
+      setIsScanningKTP(false);
+      // Kosongkan input file agar bisa pilih gambar yang sama lagi
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   // --- SUBMIT ANGGOTA BARU ---
   const submitNewMember = async (e) => {
     e.preventDefault();
@@ -194,7 +317,7 @@ const DataWarga = () => {
         status_warga: newMemberForm.status_warga,
       };
 
-      // Jika yang diinput adalah Anak dan dicentang "Baru Lahir", catat waktunya!
+      // Jika Anak + Baru Lahir, catat waktunya
       if (newMemberForm.hubungan_keluarga === 'Anak' && isNewborn) {
         payloadBaru.tanggal_kelahiran_tercatat = new Date().toISOString();
       }
@@ -205,7 +328,7 @@ const DataWarga = () => {
 
       setAddMemberModal(null);
       setNewMemberForm({ nik: '', nama_lengkap: '', hubungan_keluarga: 'Anak', status_warga: 'Hidup' });
-      setIsNewborn(false); // reset state
+      setIsNewborn(false);
       await fetchData();
       setAlertMsg({ show: true, type: 'success', message: 'Anggota keluarga baru berhasil ditambahkan!' });
     } catch (error) {
@@ -603,7 +726,7 @@ const DataWarga = () => {
         </div>
       )}
 
-      {/* --- MODAL TAMBAH ANGGOTA BARU --- */}
+      {/* --- MODAL TAMBAH ANGGOTA BARU (DENGAN OCR SCAN KTP) --- */}
       {addMemberModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh]">
@@ -629,6 +752,32 @@ const DataWarga = () => {
             </div>
 
             <form onSubmit={submitNewMember} className="p-5 space-y-4 overflow-y-auto">
+
+              {/* TOMBOL SMART SCAN KTP OCR */}
+              <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-xl">
+                <input
+                  type="file"
+                  accept="image/jpeg, image/png, image/jpg"
+                  ref={fileInputRef}
+                  className="hidden"
+                  onChange={handleScanKTP}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isScanningKTP}
+                  className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold py-2 px-4 rounded-lg text-sm transition-colors"
+                >
+                  {isScanningKTP
+                    ? <Loader2 className="animate-spin" size={16} />
+                    : <ScanText size={16} />}
+                  {isScanningKTP ? 'AI sedang membaca KTP...' : 'Scan KTP dengan AI'}
+                </button>
+                <p className="text-[10px] text-indigo-500 mt-2 font-medium text-center">
+                  Unggah foto KTP untuk mengisi form otomatis.
+                </p>
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Nama Lengkap</label>
                 <input
