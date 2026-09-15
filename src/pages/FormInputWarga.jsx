@@ -227,15 +227,15 @@ const FormInputWarga = () => {
     } catch (error) {
       console.error(error);
 
-      // Kosongkan foto agar pengguna bisa input manual
-      setFormData((prev) => ({ ...prev, file_kk: null }));
+      // Foto KK TETAP TERSIMPAN di state form (tidak di-reset)
+      // Supaya tim lapangan tetap bisa lanjut input manual tanpa kehilangan foto
 
       if (error.message === 'QUOTA_EXCEEDED') {
-        setValidationMsg('Limit AI Tercapai / Kuota Habis! Jangan panik, silakan foto ulang dokumen KK secara normal, lalu KETIK MANUAL Nomor KK dan Nama Kepala Keluarga untuk melanjutkan pendataan.');
+        setValidationMsg('Limit AI Tercapai! Foto KK sudah aman terlampir. Silakan Lanjutkan KETIK MANUAL Nomor KK dan Nama Anggota Keluarga, lalu tekan Simpan.');
       } else if (error.message === 'API_KEY_INVALID') {
-        setValidationMsg('Koneksi API ditolak. Hubungi Admin BSKM untuk memeriksa kunci API Mistral.');
+        setValidationMsg('Koneksi API AI ditolak. Foto KK sudah aman terlampir. Silakan lanjutkan input data secara manual.');
       } else {
-        setValidationMsg('Gagal membaca gambar. Pastikan foto terang, tidak blur, dan internet stabil. Jika terus gagal, silakan ketik data secara manual.');
+        setValidationMsg('AI gagal membaca teks pada gambar. Foto KK sudah aman terlampir. Silakan ketik data secara manual.');
       }
     } finally {
       setIsScanningOCR(false);

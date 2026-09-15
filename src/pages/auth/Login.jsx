@@ -148,7 +148,7 @@ const Login = () => {
             disabled={isLoading || !turnstileToken}
             className="glass-button w-full py-3 mt-2 rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isLoading ? <Loader2 className="animate-spin" size={20} /> : 'Masuk Sistem'}
+            {isLoading ? <Loader2 className="animate-spin" size={20} /> : 'Login'}
           </button>
         </form>
       </div>
