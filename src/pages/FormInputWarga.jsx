@@ -4,6 +4,7 @@ import {
   MapPin, Camera, Save, ArrowLeft, CheckCircle2, Loader2,
   Plus, Trash2, ScanText, AlertCircle, Users
 } from 'lucide-react';
+import { Turnstile } from '@marsidev/react-turnstile';
 import imageCompression from 'browser-image-compression';
 import { supabase } from '../lib/supabase';
 
@@ -33,6 +34,9 @@ const FormInputWarga = () => {
 
   // State alert (menggantikan alert() native)
   const [alertMsg, setAlertMsg] = useState({ show: false, type: 'success', message: '' });
+
+  // State untuk Turnstile anti-bot
+  const [turnstileToken, setTurnstileToken] = useState('');
 
   // Ambil koordinat GPS saat halaman dimuat
   useEffect(() => {
@@ -176,8 +180,6 @@ const FormInputWarga = () => {
       // 4. Parse response dari proxy
       const responseData = await response.json();
 
-      // Response dari proxy = response langsung dari Mistral
-      // Struktur: { pages: [{ index, markdown, ... }], model, usage_info }
       const fullMarkdown = (responseData.pages || [])
         .map((p) => p.markdown || '')
         .join('\n')
@@ -186,6 +188,8 @@ const FormInputWarga = () => {
       if (!fullMarkdown) {
         throw new Error('AI tidak mengembalikan teks dari gambar KK. Coba foto yang lebih jelas.');
       }
+
+      console.log('📄 Raw OCR markdown (KK):', fullMarkdown);
 
       // 5. Jalankan parser pintar
       const extractedData = extractDataFromOCR(fullMarkdown);
@@ -216,8 +220,6 @@ const FormInputWarga = () => {
       console.error(error);
 
       // Foto KK TETAP TERSIMPAN di state form (tidak di-reset)
-      // Supaya tim lapangan tetap bisa lanjut input manual tanpa kehilangan foto
-
       if (error.message === 'QUOTA_EXCEEDED') {
         setValidationMsg('Limit AI Tercapai! Foto KK sudah aman terlampir. Silakan Lanjutkan KETIK MANUAL Nomor KK dan Nama Anggota Keluarga, lalu tekan Simpan.');
       } else if (error.message === 'API_ERROR') {
@@ -236,6 +238,12 @@ const FormInputWarga = () => {
   // ============================================================
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // --- TAMBAHKAN VALIDASI ANTI-BOT INI ---
+    if (!turnstileToken) {
+      setValidationMsg('Verifikasi keamanan belum selesai. Harap tunggu sistem memastikan Anda bukan robot.');
+      return;
+    }
 
     // Validasi
     if (!location.lat) {
@@ -299,7 +307,6 @@ const FormInputWarga = () => {
         .single();
 
       if (cekRumah) {
-        // Rumah sudah ada → update RT + koordinat + status
         rumahId = cekRumah.id;
         const { error: errUpdateRumah } = await supabase
           .from('rumah')
@@ -312,7 +319,6 @@ const FormInputWarga = () => {
           .eq('id', rumahId);
         if (errUpdateRumah) throw errUpdateRumah;
       } else {
-        // Rumah belum ada → buat rumah baru
         const { data: rumahBaru, error: errRumah } = await supabase
           .from('rumah')
           .insert({
@@ -369,6 +375,7 @@ const FormInputWarga = () => {
         file_kk: null,
       });
       setAnggotaWarga([{ nik: '', nama_lengkap: '', hubungan_keluarga: 'Kepala Keluarga' }]);
+      setTurnstileToken(''); // Reset token Turnstile
 
     } catch (error) {
       console.error('Gagal menyimpan:', error);
@@ -650,9 +657,18 @@ const FormInputWarga = () => {
             </button>
           </div>
 
+          {/* TURNSTILE ANTI-BOT WIDGET */}
+          <div className="flex justify-center mt-6 mb-2 min-h-[65px]">
+            <Turnstile
+              siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY}
+              onSuccess={(token) => setTurnstileToken(token)}
+              options={{ theme: 'light' }}
+            />
+          </div>
+
           <button
             type="submit"
-            disabled={isSubmitting || isScanningOCR}
+            disabled={isSubmitting || isScanningOCR || !turnstileToken}
             className="glass-button w-full py-4 mt-2 rounded-xl flex items-center justify-center gap-2 text-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSubmitting
