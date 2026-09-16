@@ -9,6 +9,8 @@ import DataWarga from './pages/DataWarga';
 import DataRumah from './pages/DataRumah';
 import DaftarKematian from './pages/DaftarKematian';
 import DaftarKelahiran from './pages/DaftarKelahiran';
+import SyaratKetentuan from './pages/SyaratKetentuan';
+import KebijakanPrivasi from './pages/KebijakanPrivasi';
 
 function App() {
   return (
@@ -18,6 +20,10 @@ function App() {
         <Route path="/" element={<AdminDashboard />} />
         <Route path="/form" element={<FormInputWarga />} />
         <Route path="/login" element={<Login />} />
+
+        {/* Halaman Legal */}
+        <Route path="/syarat-ketentuan" element={<SyaratKetentuan />} />
+        <Route path="/kebijakan-privasi" element={<KebijakanPrivasi />} />
 
         {/* Halaman Khusus Pengurus (Dibungkus Layout Sidebar) */}
         <Route path="/dashboard" element={<DashboardLayout />}>
